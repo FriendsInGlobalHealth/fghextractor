@@ -1,5 +1,6 @@
 package tz.co.juutech.extractor;
 
+import ch.qos.logback.classic.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,6 +28,7 @@ public class FGHExtractorOrchestrator {
 
     public static void main(String[] args) throws Exception {
         long start = System.currentTimeMillis();
+        setLoggingLevel();
         LOGGER.info("START TIME: {}", LocalDateTime.now());
         LOGGER.info("Effective applicatin properties being used are {}", AppProperties.getInstance().toString());
 
@@ -249,5 +251,10 @@ public class FGHExtractorOrchestrator {
         StringBuilder tableCondition = new StringBuilder("t.").append(referencingTable.getColumnName()).append(" in ").append(idsToCopy);
         String recordCopierSql = ExtractionUtils.getCopyingSQL(referencingTable.getTable(), tableCondition.toString());
         return new TableCopierTask(referencingTable.getTable(), ConnectionPool.getConnection(), recordCopierSql);
+    }
+
+    private static void setLoggingLevel() {
+        ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME);
+        root.setLevel(Level.toLevel(AppProperties.getInstance().getLogLevel(), Level.TRACE));
     }
 }

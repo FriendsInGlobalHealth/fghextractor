@@ -22,7 +22,6 @@ public class AppProperties {
     private static final Logger LOGGER = LoggerFactory.getLogger(AppProperties.class);
 
     public final static String JDBC_URL_PROP = "jdbc.url";
-    public final static String DB_NAME_PROP = "db.name";
     public final static String DB_PASSWORD_PROP = "db.password";
     public final static String DB_USERNAME_PROP = "db.username";
     public final static String ENCOUNTER_TYPE_ID_PROP = "encounterType.id";
@@ -33,6 +32,7 @@ public class AppProperties {
     public final static String DROP_NEW_DB_AFTER_PROP = "drop.newDb.after";
     public final static String APPLICATION_PROPERTIES_FILENAME = "application.properties";
     public final static String DEV_APPLICATION_PROPERTIES_FILENAME = "dev-application.properties";
+    public static final String LOG_LEVEL_PROP = "log.level";
 
     private static AppProperties appProperties = null;
     private static final Properties APP_PROPS = new Properties();
@@ -132,6 +132,9 @@ public class AppProperties {
         return dropNewDbAfter;
     }
 
+    public String getLogLevel() {
+        return APP_PROPS.getProperty(LOG_LEVEL_PROP, "TRACE").toUpperCase();
+    }
     @Override
     public String toString() {
         return APP_PROPS.toString();
