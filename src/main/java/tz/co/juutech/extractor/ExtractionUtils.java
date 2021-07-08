@@ -3,6 +3,12 @@ package tz.co.juutech.extractor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * @uthor Willa Mhawila<a.mhawila@gmail.com> on 6/21/21.
@@ -44,11 +51,14 @@ public class ExtractionUtils {
                 tablesToMove.removeAll(AppProperties.getInstance().getExcludedTables());
             }
 
-            // Remove patient & encounter
-            tablesToMove.remove("encounter");
+            // Remove patient & person
             tablesToMove.remove("patient");
             tablesToMove.remove("person");
+
+            // Remove users related tables
             tablesToMove.remove("users");
+            tablesToMove.remove("user_role");
+            tablesToMove.remove("user_property");
 
             // Remove tables which we are only to copy structure
             tablesToMove.removeAll(AppProperties.getInstance().getOnlyStructureTables());
@@ -123,6 +133,14 @@ public class ExtractionUtils {
         sb.deleteCharAt(sb.length() - 1);
         sb.append(")");
         return sb.toString();
+    }
+
+    public static String getPatientListQueryFromFile() throws URISyntaxException, IOException {
+        URL sqlFileUrl = FGHExtractorOrchestrator.class.getResource(File.separator.concat(AppProperties.getInstance().getPatientListQueryFileName()));
+        return Files.lines(Paths.get(sqlFileUrl.toURI())).collect(Collectors.joining(" "))
+                .replace("sourceDatabase", AppProperties.getInstance().getDatabaseName())
+                .replace(":location", AppProperties.getInstance().getLocationId().toString())
+                .replace(":endDate", String.format("'%s'", AppProperties.getInstance().getFormattedEndDate("yyyy-MM-dd")));
     }
 
     public static String getDumpFilename() {

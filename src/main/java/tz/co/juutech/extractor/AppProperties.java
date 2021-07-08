@@ -3,12 +3,17 @@ package tz.co.juutech.extractor;
 import com.mysql.jdbc.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tz.co.juutech.extractor.exception.InvalidMandatoryPropertyValueException;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Properties;
@@ -26,6 +31,8 @@ public class AppProperties {
     public final static String DB_USERNAME_PROP = "db.username";
     public final static String ENCOUNTER_TYPE_ID_PROP = "encounterType.id";
     public final static String LOCATION_ID_PROP = "location.id";
+    public final static String END_DATE_PROP = "end.date";
+    public final static String END_DATE_PATTERN_PROP = "end.date.pattern";
     public final static String NEW_DB_NAME_PROP = "newDb.name";
     public final static String EXCLUDED_TABLES_PROP = "excluded.tables";
     public final static String ONLY_STRUCTURE_TABLES_PROP = "copy.only.structure";
@@ -34,10 +41,15 @@ public class AppProperties {
     public final static String DEV_APPLICATION_PROPERTIES_FILENAME = "dev-application.properties";
     public static final String LOG_LEVEL_PROP = "log.level";
 
+    private static final String PATIENT_LIST_QUERY_FILE = "patient_list_query.sql";
+    private static final String DEFAULT_END_DATE_PATTERN = "dd-MM-yyyy";
+
     private static AppProperties appProperties = null;
     private static final Properties APP_PROPS = new Properties();
     private Integer encounterTypeId;
     private Integer locationId;
+    private LocalDate endDate;
+    private DateTimeFormatter endDateFormatter;
     private String host;
     private String databaseName;
     private Integer port;
@@ -65,7 +77,26 @@ public class AppProperties {
                 applyPropertiesFromUser();
 
                 appProperties.encounterTypeId = Integer.valueOf(APP_PROPS.getProperty(ENCOUNTER_TYPE_ID_PROP));
-                appProperties.locationId = Integer.valueOf(APP_PROPS.getProperty(LOCATION_ID_PROP));
+                try {
+                    appProperties.locationId = Integer.valueOf(APP_PROPS.getProperty(LOCATION_ID_PROP));
+                } catch (NumberFormatException e) {
+                    throw new InvalidMandatoryPropertyValueException(LOCATION_ID_PROP, APP_PROPS.getProperty(LOCATION_ID_PROP));
+                }
+
+                try {
+                    String datePattern = APP_PROPS.getProperty(END_DATE_PATTERN_PROP, DEFAULT_END_DATE_PATTERN);
+                    appProperties.endDateFormatter = DateTimeFormatter.ofPattern(datePattern);
+                    appProperties.endDate = LocalDate.parse(APP_PROPS.getProperty(END_DATE_PROP), appProperties.endDateFormatter);
+                } catch (DateTimeParseException|NullPointerException e) {
+                    if(APP_PROPS.containsKey(END_DATE_PROP) && APP_PROPS.getProperty(END_DATE_PROP) != null) {
+                        LOGGER.error("Invalid value set for property {}", END_DATE_PROP);
+                        throw e;
+                    } else {
+                        // Just use now.
+                        LOGGER.info("{} property not set, defaulting to current date", END_DATE_PROP);
+                        appProperties.endDate = LocalDate.now();
+                    }
+                }
                 appProperties.dropNewDbAfter = Boolean.valueOf(APP_PROPS.getProperty(DROP_NEW_DB_AFTER_PROP, "FALSE"));
                 String onlyStructureTables = APP_PROPS.getProperty(ONLY_STRUCTURE_TABLES_PROP, "");
                 if(!StringUtils.isNullOrEmpty(onlyStructureTables)) {
@@ -132,9 +163,25 @@ public class AppProperties {
         return dropNewDbAfter;
     }
 
+    public LocalDate getEndDate() {
+        return endDate;
+    }
+
+    public String getFormattedEndDate(String pattern) {
+        if(pattern == null) return endDate.format(endDateFormatter);
+        else {
+            return endDate.format(DateTimeFormatter.ofPattern(pattern));
+        }
+    }
+
     public String getLogLevel() {
         return APP_PROPS.getProperty(LOG_LEVEL_PROP, "TRACE").toUpperCase();
     }
+
+    public String getPatientListQueryFileName() {
+        return PATIENT_LIST_QUERY_FILE;
+    }
+
     @Override
     public String toString() {
         return APP_PROPS.toString();

@@ -6,18 +6,18 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.concurrent.Callable;
 
 /**
  * @uthor Willa Mhawila<a.mhawila@gmail.com> on 6/21/21.
  */
-public class TableCopierTask extends Thread {
+public class TableCopierTask implements Callable<Void> {
     private String table;
     private Connection connection;
     private String copyingSql;
     private static final Logger LOGGER = LoggerFactory.getLogger(TableCopierTask.class);
 
     public TableCopierTask(String table, Connection connection, String copyingSql) {
-        super(table);
         assert table != null;
         assert connection != null;
         this.table = table;
@@ -33,7 +33,7 @@ public class TableCopierTask extends Thread {
     }
 
     @Override
-    public void run() {
+    public Void call() throws SQLException {
         try (Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
             statement.execute("set foreign_key_checks=0");
@@ -56,9 +56,11 @@ public class TableCopierTask extends Thread {
             }
             LOGGER.debug("Table: " + this.table + ", SQL: "+ copyingSql);
             connection.commit();
-            LOGGER.debug("Done moving records for table " + this.table);
+            LOGGER.debug("Done copying records for table " + this.table);
+            return null;
         } catch (SQLException e) {
             LOGGER.error("SQL during error: {}", this.copyingSql, e);
+            throw e;
         } finally {
             if(connection != null) {
                 try {

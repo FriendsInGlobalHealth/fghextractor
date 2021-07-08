@@ -3,6 +3,7 @@ package tz.co.juutech.extractor;
 import ch.qos.logback.classic.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tz.co.juutech.extractor.exception.InvalidMandatoryPropertyValueException;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -12,10 +13,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -32,6 +37,12 @@ public class FGHExtractorOrchestrator {
         LOGGER.info("START TIME: {}", LocalDateTime.now());
         LOGGER.info("Effective applicatin properties being used are {}", AppProperties.getInstance().toString());
 
+        if(AppProperties.getInstance().getLocationId() == null) {
+            LOGGER.error("All mandatory properties must be set with valid values");
+            throw new InvalidMandatoryPropertyValueException(AppProperties.LOCATION_ID_PROP,
+                    String.valueOf(AppProperties.getInstance().getLocationId()));
+        }
+
         ExecutorService service = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
         try {
             // Create the database to copy/extract to.
@@ -44,26 +55,19 @@ public class FGHExtractorOrchestrator {
             LOGGER.debug("Copying tables copied without data: {}", AppProperties.getInstance().getOnlyStructureTables());
             ExtractionUtils.copyOnlyStructure(ConnectionPool.getConnection(), AppProperties.getInstance().getOnlyStructureTables());
 
-            // Move encounters
-            StringBuilder condition = new StringBuilder("t.encounter_type = ").append(AppProperties.getInstance().getEncounterTypeId())
-                    .append(" AND t.location_id = ").append(AppProperties.getInstance().getLocationId());
-            String movingSQL = ExtractionUtils.getCopyingSQL("encounter", condition.toString());
-            TableCopierTask encounterMoverTask = new TableCopierTask("encounter", ConnectionPool.getConnection(), movingSQL);
+            // Get the list of patients to copy.
+            String patientListQuery = ExtractionUtils.getPatientListQueryFromFile();
+            LOGGER.debug("Patient list query is: {}", patientListQuery);
 
-            encounterMoverTask.run();
-
-            StringBuilder patCondition = new StringBuilder("t.patient_id in (select patient_id from ")
-                    .append(AppProperties.getInstance().getNewDatabaseName()).append(".encounter)");
+            StringBuilder patCondition = new StringBuilder("t.patient_id in (").append(patientListQuery).append(")");
             String patSql = ExtractionUtils.getCopyingSQL("patient", patCondition.toString());
-            TableCopierTask patientMover = new TableCopierTask("patient", ConnectionPool.getConnection(), patSql);
+            TableCopierTask patientCopier = new TableCopierTask("patient", ConnectionPool.getConnection(), patSql);
 
-            StringBuilder personCondition = new StringBuilder("t.person_id in (select patient_id from ")
-                    .append(AppProperties.getInstance().getNewDatabaseName()).append(".encounter)");
+            StringBuilder personCondition = new StringBuilder("t.person_id in (").append(patientListQuery).append(")");
             String personSql = ExtractionUtils.getCopyingSQL("person", personCondition.toString());
-            TableCopierTask personMover = new TableCopierTask("person", ConnectionPool.getConnection(), personSql);
+            TableCopierTask personCopier = new TableCopierTask("person", ConnectionPool.getConnection(), personSql);
 
-            patientMover.run();
-            personMover.run();
+            service.invokeAll(Arrays.asList(patientCopier, personCopier));
 
             // Tables referencing person.
             TablesReferencingAnotherTask personTablesTask = new TablesReferencingAnotherTask(ConnectionPool.getConnection(), "person", "person_id");
@@ -136,7 +140,7 @@ public class FGHExtractorOrchestrator {
                 usersCondition.append(")");
                 String userSql = ExtractionUtils.getCopyingSQL("users", usersCondition.toString());
                 TableCopierTask usersTask = new TableCopierTask("users", ConnectionPool.getConnection(), userSql);
-                usersTask.run();
+                usersTask.call();
 
                 LOGGER.debug("Fetching person ids for copied users");
                 Set<Integer> associatedPersonIds = new HashSet<>();
@@ -155,22 +159,22 @@ public class FGHExtractorOrchestrator {
                     String setOfIds = ExtractionUtils.stringifySetOfIntegers(associatedPersonIds);
                     StringBuilder personTableCondition = new StringBuilder("t.person_id in ").append(setOfIds);
                     new TableCopierTask("person", ConnectionPool.getConnection(),
-                            ExtractionUtils.getCopyingSQL("person", personTableCondition.toString())).run();
+                            ExtractionUtils.getCopyingSQL("person", personTableCondition.toString())).call();
 
                     if (!personReferencingTables.isEmpty()) {
                         for (TableReferencingAnother personRef : personReferencingTables) {
-                            copyReferencingTableRecordsTask(personRef, setOfIds).run();
+                            copyReferencingTableRecordsTask(personRef, setOfIds).call();
                         }
                     }
 
                     // Do the same for patient tables
                     StringBuilder patientTableCondition = new StringBuilder("t.patient_id in ").append(setOfIds);
                     new TableCopierTask("patient", ConnectionPool.getConnection(),
-                            ExtractionUtils.getCopyingSQL("patient", patientTableCondition.toString())).run();
+                            ExtractionUtils.getCopyingSQL("patient", patientTableCondition.toString())).call();
 
                     if (!patientReferencingTables.isEmpty()) {
                         for (TableReferencingAnother patientRef : patientReferencingTables) {
-                            copyReferencingTableRecordsTask(patientRef, setOfIds).run();
+                            copyReferencingTableRecordsTask(patientRef, setOfIds).call();
                         }
                     }
                 }
