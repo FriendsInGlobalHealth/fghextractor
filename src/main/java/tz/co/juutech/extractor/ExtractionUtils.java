@@ -70,8 +70,34 @@ public class ExtractionUtils {
         StringBuilder sql = new StringBuilder("INSERT INTO ")
                 .append(AppProperties.getInstance().getNewDatabaseName())
                 .append(".").append(table).append(" (SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName())
-                .append(".").append(table).append(" AS t WHERE ").append(condition).append(")");
+                .append(".").append(table);
+        if(condition != null) {
+            sql.append(" AS t WHERE ").append(condition).append(")");
+        }
         return sql.toString();
+    }
+
+    public static String getCopyingSQLWithOrderAndPaging(final String table, final String condition, final String orderColumn,
+                                                         final Integer startIndex, final Integer size) {
+        StringBuilder sql = new StringBuilder("INSERT INTO ")
+                .append(AppProperties.getInstance().getNewDatabaseName())
+                .append(".").append(table).append(" (SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName())
+                .append(".").append(table);
+        if(condition != null) {
+            sql.append(" AS t WHERE ").append(condition);
+        }
+        sql.append(" ORDER BY ").append(orderColumn).append(" LIMIT ").append(startIndex).append(", ").append(size).append(")");
+        return sql.toString();
+    }
+
+    public static String getCountingQuery(final String table, final String condition) {
+        StringBuilder countQuery = new StringBuilder("SELECT COUNT(*) FROM ")
+                .append(AppProperties.getInstance().getDatabaseName())
+                .append(".").append(table);
+        if(condition != null ) {
+            countQuery.append(" AS t WHERE ").append(condition);
+        }
+        return countQuery.toString();
     }
 
     public static void createNewDatabase(final Connection connection) throws SQLException {

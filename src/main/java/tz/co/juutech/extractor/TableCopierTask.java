@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.concurrent.Callable;
@@ -13,28 +14,25 @@ import java.util.concurrent.Callable;
  */
 public class TableCopierTask implements Callable<Void> {
     private String table;
-    private Connection connection;
-    private String copyingSql;
+    private String condition;
     private static final Logger LOGGER = LoggerFactory.getLogger(TableCopierTask.class);
 
-    public TableCopierTask(String table, Connection connection, String copyingSql) {
+    public TableCopierTask(String table, String condition) {
         assert table != null;
-        assert connection != null;
         this.table = table;
-        this.connection = connection;
-        this.copyingSql = copyingSql;
+        this.condition = condition;
     }
 
-    public TableCopierTask(String table, Connection connection) {
+    public TableCopierTask(String table) {
         assert table != null;
-        assert connection != null;
         this.table = table;
-        this.connection = connection;
     }
 
     @Override
     public Void call() throws SQLException {
-        try (Statement statement = connection.createStatement()) {
+        ResultSet resultSet = null;
+        try (   Connection connection = ConnectionPool.getConnection();
+                Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
             statement.execute("set foreign_key_checks=0");
             StringBuilder createTableSql = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
@@ -44,27 +42,50 @@ public class TableCopierTask implements Callable<Void> {
                     .append(".").append(this.table);
 
             statement.execute(createTableSql.toString());
-            if(this.copyingSql != null) {
-                statement.execute(this.copyingSql);
+
+            resultSet = statement.executeQuery(ExtractionUtils.getCountingQuery(table, condition));
+            resultSet.next();
+            int countToMove = resultSet.getInt(1);
+            int batchSize = AppProperties.getInstance().getBatchSize();
+            if(countToMove > batchSize) {
+                LOGGER.trace("Copying {} records from {} in batches of {} number of records at time", countToMove, this.table, batchSize);
+                int start = 0;
+                int temp = countToMove;
+                String copyingSql;
+                // TODO: Assuming the openmrs convention where primary key column is always table_id, need to find a robust way of obtaining this.
+                String orderColumn = table + "_id";
+                int batchCount = 1;
+                while (temp % batchSize > 0) {
+                    if (temp / batchSize > 0) {
+                        LOGGER.trace("Copying batch # {} of {} table: {} records", batchCount++, this.table, batchSize);
+                        copyingSql = ExtractionUtils.getCopyingSQLWithOrderAndPaging(table, condition, orderColumn, start, batchSize);
+                        temp -= batchSize;
+                    } else {
+                        LOGGER.trace("Copying batch # {} of {} table: {} records", batchCount++, this.table, temp);
+                        copyingSql = ExtractionUtils.getCopyingSQLWithOrderAndPaging(table, condition, orderColumn, start, temp);
+                        temp = 0;
+                    }
+                    start += batchSize;
+                    LOGGER.debug("Running SQL statement: {}", copyingSql);
+                    statement.execute(copyingSql);
+                }
             } else {
-                StringBuilder moveRecords = new StringBuilder("INSERT INTO ")
-                        .append(AppProperties.getInstance().getNewDatabaseName())
-                        .append(".").append(this.table).append(" (SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName())
-                        .append(".").append(this.table).append(")");
-                this.copyingSql = moveRecords.toString();
-                statement.execute(moveRecords.toString());
+                // few records to move.
+                String copyingSql = ExtractionUtils.getCopyingSQL(table, condition);
+                LOGGER.debug("Running SQL statement: {}", copyingSql);
+                statement.execute(copyingSql);
             }
-            LOGGER.debug("Table: " + this.table + ", SQL: "+ copyingSql);
+
             connection.commit();
-            LOGGER.debug("Done copying records for table " + this.table);
+            LOGGER.debug("Done copying records for table {}", this.table);
             return null;
         } catch (SQLException e) {
-            LOGGER.error("SQL during error: {}", this.copyingSql, e);
+            LOGGER.error("An error has occured while copying records for table {}", this.table, e);
             throw e;
         } finally {
-            if(connection != null) {
+            if(resultSet != null) {
                 try {
-                    connection.close();
+                    resultSet.close();
                 } catch (SQLException e){}
             }
         }

@@ -37,12 +37,14 @@ public class AppProperties {
     public final static String EXCLUDED_TABLES_PROP = "excluded.tables";
     public final static String ONLY_STRUCTURE_TABLES_PROP = "copy.only.structure";
     public final static String DROP_NEW_DB_AFTER_PROP = "drop.newDb.after";
+    public final static String BATCH_SIZE_PROP = "batch.size";
     public final static String APPLICATION_PROPERTIES_FILENAME = "application.properties";
     public final static String DEV_APPLICATION_PROPERTIES_FILENAME = "dev-application.properties";
     public static final String LOG_LEVEL_PROP = "log.level";
 
     private static final String PATIENT_LIST_QUERY_FILE = "patient_list_query.sql";
     private static final String DEFAULT_END_DATE_PATTERN = "dd-MM-yyyy";
+    private static final int DEFAULT_BATCH_SIZE = 15000;
 
     private static AppProperties appProperties = null;
     private static final Properties APP_PROPS = new Properties();
@@ -55,6 +57,7 @@ public class AppProperties {
     private Integer port;
 
     private Boolean dropNewDbAfter;
+    private Integer batchSize;
 
     private Set<String> excludedTables = new HashSet<>();
     private Set<String> onlyStructureTables = new HashSet<>();
@@ -104,6 +107,12 @@ public class AppProperties {
                     appProperties.onlyStructureTables = Arrays.stream(explodedList).map(excludedTable -> excludedTable.trim()).collect(Collectors.toSet());
                 }
 
+                try {
+                    appProperties.batchSize = Integer.valueOf(APP_PROPS.getProperty(BATCH_SIZE_PROP));
+                } catch (NumberFormatException e) {
+                    LOGGER.debug("Invalid value set for {}, ignoring and using default of {}", BATCH_SIZE_PROP, DEFAULT_BATCH_SIZE);
+                    appProperties.batchSize = DEFAULT_BATCH_SIZE;
+                }
                 //Host and port
                 appProperties.determineMysqlHostAndPortFromJdbcUrl();
             } catch (Exception e) {
@@ -161,6 +170,10 @@ public class AppProperties {
 
     public Boolean getDropNewDbAfter() {
         return dropNewDbAfter;
+    }
+
+    public Integer getBatchSize() {
+        return batchSize;
     }
 
     public LocalDate getEndDate() {
