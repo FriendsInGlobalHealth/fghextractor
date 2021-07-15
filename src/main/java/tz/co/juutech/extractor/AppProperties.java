@@ -44,7 +44,7 @@ public class AppProperties {
 
     private static final String PATIENT_LIST_QUERY_FILE = "patient_list_query.sql";
     private static final String DEFAULT_END_DATE_PATTERN = "dd-MM-yyyy";
-    private static final int DEFAULT_BATCH_SIZE = 15000;
+    private static final int DEFAULT_BATCH_SIZE = 20000;
 
     private static AppProperties appProperties = null;
     private static final Properties APP_PROPS = new Properties();

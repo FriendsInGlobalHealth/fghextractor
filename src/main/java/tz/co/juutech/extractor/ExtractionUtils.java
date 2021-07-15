@@ -116,35 +116,28 @@ public class ExtractionUtils {
         }
     }
 
-    public static void copyOnlyStructure(final Connection connection, final Set<String> tables) throws SQLException {
-        try {
-            for (String table : tables) {
-                copyOnlyStructure(connection, table, false);
-            }
-        } finally {
-            if(connection != null) {
-                try {
-                    connection.close();
-                } catch (SQLException e){}
-            }
+    public static void copyOnlyStructure(final Set<String> tables) throws SQLException {
+        for (String table : tables) {
+            copyOnlyStructure(table);
         }
     }
 
-    public static void copyOnlyStructure(final Connection connection, final String table, final boolean closeConnection) throws SQLException {
-        StringBuilder sql = new StringBuilder("CREATE TABLE ").append(AppProperties.getInstance().getNewDatabaseName()).append(".")
-                .append(table).append(" AS SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName()).append(".").append(table)
-                .append(" LIMIT 0");
-        try (Statement s = connection.createStatement()) {
-            s.execute(sql.toString());
+    public static void copyOnlyStructure(final String table) throws SQLException {
+        String createTableSql = null;
+        try (Connection connection = ConnectionPool.getConnection();
+             Statement s = connection.createStatement();
+             ResultSet resultSet =
+                     s.executeQuery("SHOW CREATE TABLE ".concat(AppProperties.getInstance().getDatabaseName()).concat(".").concat(table))) {
+            resultSet.next();
+            // The second column is named "Create Table"
+            createTableSql = resultSet.getString(2);
+            String createInNewDb = "CREATE TABLE IF NOT EXISTS ".concat(AppProperties.getInstance().getNewDatabaseName()).concat(".");
+            createTableSql = createTableSql.replace("CREATE TABLE ", createInNewDb);
+            s.execute("set foreign_key_checks=0");
+            s.execute(createTableSql);
         } catch (SQLException sqle) {
-            LOGGER.error("An error occured while running sql: {}", sql.toString(), sqle);
+            LOGGER.error("An error occured while running sql: {}", createTableSql, sqle);
             throw sqle;
-        } finally {
-            if(closeConnection && connection != null) {
-                try {
-                    connection.close();
-                } catch (SQLException e){}
-            }
         }
     }
 

@@ -54,7 +54,7 @@ public class FGHExtractorOrchestrator {
             // Copy tables which only have to be copied for structure
             LOGGER.debug("Copying tables copied without data: {}", AppProperties.getInstance().getOnlyStructureTables());
             long startOfStep = System.currentTimeMillis();
-            ExtractionUtils.copyOnlyStructure(ConnectionPool.getConnection(), AppProperties.getInstance().getOnlyStructureTables());
+            ExtractionUtils.copyOnlyStructure(AppProperties.getInstance().getOnlyStructureTables());
             LOGGER.debug("Time taken to copy tables for which we only want structure: {} ms", System.currentTimeMillis() - startOfStep);
 
             // Get the list of patients to copy.
@@ -63,11 +63,9 @@ public class FGHExtractorOrchestrator {
             LOGGER.debug("Patient list query is: {}", patientListQuery);
 
             StringBuilder patCondition = new StringBuilder("t.patient_id in (").append(patientListQuery).append(")");
-            String patSql = ExtractionUtils.getCopyingSQL("patient", patCondition.toString());
             TableCopierTask patientCopier = new TableCopierTask("patient", patCondition.toString());
 
             StringBuilder personCondition = new StringBuilder("t.person_id in (").append(patientListQuery).append(")");
-            String personSql = ExtractionUtils.getCopyingSQL("person", personCondition.toString());
             TableCopierTask personCopier = new TableCopierTask("person", personCondition.toString());
 
             service.invokeAll(Arrays.asList(patientCopier, personCopier));
@@ -83,15 +81,22 @@ public class FGHExtractorOrchestrator {
             Set<TableReferencingAnother> patientReferencingTables = futures.get(1).get();
 
             List<TableCopierTask> tobeInvoked = new ArrayList<>();
+            // relationship table has two columns person_a and person_b both referencing person(person_id). This means one record will be copied twice
+            // causing duplicate error in case the relationship is between two persons who both satisfy the conditions for them to be included in the
+            // initial subset of persons. Therefore we need to handle one of them differently.
+            TableReferencingAnother oneRelationshipForSpecialHandlingLater = null;
             if (!personReferencingTables.isEmpty()) {
                 // Remove from tables to move
                 Set<String> personTableNames = personReferencingTables.stream().map(personTable -> personTable.getTable()).collect(Collectors.toSet());
                 LOGGER.info("Copying tables having a foreign key referencing the person(person_id) table: {}", personTableNames);
                 otherTablesToBeCopied.removeAll(personTableNames);
                 for (TableReferencingAnother personRef : personReferencingTables) {
-                    StringBuilder tableCondition = new StringBuilder("t.").append(personRef.getColumnName()).append(" in (select person_id from ")
+                    if("relationship".equals(personRef.getTable())) {
+                        oneRelationshipForSpecialHandlingLater = personRef;
+                        continue;
+                    }
+                    StringBuilder tableCondition = new StringBuilder("t.").append(personRef.getColumnName()).append(" IN (SELECT person_id FROM ")
                             .append(AppProperties.getInstance().getNewDatabaseName()).append(".person)");
-                    String recordMoverSql = ExtractionUtils.getCopyingSQL(personRef.getTable(), tableCondition.toString());
                     tobeInvoked.add(new TableCopierTask(personRef.getTable(), tableCondition.toString()));
                 }
             }
@@ -104,7 +109,6 @@ public class FGHExtractorOrchestrator {
                 for (TableReferencingAnother patientRef : patientReferencingTables) {
                     StringBuilder tableCondition = new StringBuilder("t.").append(patientRef.getColumnName()).append(" in (select patient_id from ")
                             .append(AppProperties.getInstance().getNewDatabaseName()).append(".patient)");
-                    String recordCopierSql = ExtractionUtils.getCopyingSQL(patientRef.getTable(), tableCondition.toString());
                     tobeInvoked.add(new TableCopierTask(patientRef.getTable(), tableCondition.toString()));
                 }
             }
@@ -112,6 +116,14 @@ public class FGHExtractorOrchestrator {
             if(!tobeInvoked.isEmpty()) {
                 service.invokeAll(tobeInvoked);
             }
+
+            LOGGER.trace("Handling one of the relationship dependency separately to avoid conflicts");
+            StringBuilder secondRelationshipTableCondition = new StringBuilder("t.relationship_id NOT IN ")
+                    .append("(SELECT relationship_id FROM ").append(AppProperties.getInstance().getNewDatabaseName()).append(".relationship) AND ")
+                    .append("t.").append(oneRelationshipForSpecialHandlingLater.getColumnName()).append(" IN (SELECT person_id FROM ")
+                    .append(AppProperties.getInstance().getNewDatabaseName()).append(".person)");
+            new TableCopierTask(oneRelationshipForSpecialHandlingLater.getTable(), secondRelationshipTableCondition.toString()).call();
+            copyAssociatedPersonAndPatientTablesRecords("relationship", personReferencingTables, patientReferencingTables);
             LOGGER.debug("Time taken to copy table referencing patient & person tables: {} ms", System.currentTimeMillis() - startOfStep);
 
             // Special handling of encounter_provider & provider tables.
@@ -119,13 +131,11 @@ public class FGHExtractorOrchestrator {
             otherTablesToBeCopied.remove("encounter_provider");
             StringBuilder encProvCondition = new StringBuilder("t.encounter_id IN (SELECT encounter_id FROM ")
                     .append(AppProperties.getInstance().getNewDatabaseName()).append(".encounter)");
-            String encProvRecordCopierSql = ExtractionUtils.getCopyingSQL("encounter_provider", encProvCondition.toString());
             new TableCopierTask("encounter_provider", encProvCondition.toString()).call();
 
             LOGGER.debug("Copying providers associated with encounter_provider records who are not yet copied");
             StringBuilder provCondition = new StringBuilder("t.provider_id NOT IN (SELECT provider_id FROM ")
                     .append(AppProperties.getInstance().getNewDatabaseName()).append(".provider)");
-            String provCopierSql = ExtractionUtils.getCopyingSQL("provider", provCondition.toString());
             new TableCopierTask("provider", provCondition.toString()).call();
             copyAssociatedPersonAndPatientTablesRecords("provider", personReferencingTables, patientReferencingTables);
 
@@ -134,7 +144,6 @@ public class FGHExtractorOrchestrator {
             otherTablesToBeCopied.remove("patient_state");
             StringBuilder patientStateCondition = new StringBuilder("t.patient_program_id IN (SELECT patient_program_id FROM ")
                     .append(AppProperties.getInstance().getNewDatabaseName()).append(".patient_program)");
-            String patientStateCopierSql = ExtractionUtils.getCopyingSQL("patient_state", patientStateCondition.toString());
             new TableCopierTask("patient_state", patientStateCondition.toString()).call();
 
             // Move other tables.
@@ -172,7 +181,6 @@ public class FGHExtractorOrchestrator {
                 usersToCopy.forEach(id -> usersCondition.append(id).append(","));
                 usersCondition.deleteCharAt(usersCondition.length() - 1);
                 usersCondition.append(")");
-                String userSql = ExtractionUtils.getCopyingSQL("users", usersCondition.toString());
                 TableCopierTask usersTask = new TableCopierTask("users", usersCondition.toString());
                 usersTask.call();
 
@@ -252,7 +260,6 @@ public class FGHExtractorOrchestrator {
      */
     private static TableCopierTask copyReferencingTableRecordsTask(final TableReferencingAnother referencingTable, final String idsToCopy) throws SQLException {
         StringBuilder tableCondition = new StringBuilder("t.").append(referencingTable.getColumnName()).append(" in ").append(idsToCopy);
-        String recordCopierSql = ExtractionUtils.getCopyingSQL(referencingTable.getTable(), tableCondition.toString());
         return new TableCopierTask(referencingTable.getTable(), tableCondition.toString());
     }
 
@@ -265,14 +272,28 @@ public class FGHExtractorOrchestrator {
                                                                     Set<TableReferencingAnother> patientReferencingTables) throws SQLException {
         LOGGER.debug("Fetching person ids for copied {} records whose corresponding person records are not yet copied", table);
         Set<Integer> associatedPersonIds = new HashSet<>();
-        StringBuilder sb = new StringBuilder("SELECT person_id FROM ").append(AppProperties.getInstance().getNewDatabaseName())
-                .append(".").append(table).append(" u WHERE NOT EXISTS (SELECT 1 FROM ").append(AppProperties.getInstance().getNewDatabaseName())
-                .append(".person p WHERE u.person_id = p.person_id)");
-        LOGGER.trace("Query fetching person records referenced by not yet copied: {} ", sb.toString());
+        String query;
+        if("relationship".equals(table)) {
+            StringBuilder sb = new StringBuilder("(SELECT person_a as person_id FROM ").append(AppProperties.getInstance().getNewDatabaseName())
+                    .append(".").append(table).append(" u WHERE NOT EXISTS (SELECT 1 FROM ").append(AppProperties.getInstance().getNewDatabaseName())
+                    .append(".person p WHERE u.person_a = p.person_id))");
+            sb.append(" UNION ");
+            sb.append("(SELECT person_b as person_id FROM ").append(AppProperties.getInstance().getNewDatabaseName())
+                    .append(".").append(table).append(" u WHERE NOT EXISTS (SELECT 1 FROM ").append(AppProperties.getInstance().getNewDatabaseName())
+                    .append(".person p WHERE u.person_b = p.person_id))");
+            query = sb.toString();
+        } else {
+            StringBuilder sb = new StringBuilder("SELECT person_id FROM ").append(AppProperties.getInstance().getNewDatabaseName())
+                    .append(".").append(table).append(" u WHERE NOT EXISTS (SELECT 1 FROM ").append(AppProperties.getInstance().getNewDatabaseName())
+                    .append(".person p WHERE u.person_id = p.person_id)");
+            query = sb.toString();
+        }
+
+        LOGGER.trace("Query fetching person records referenced by not yet copied: {} ", query);
 
         try (Connection con = ConnectionPool.getConnection();
              Statement statement = con.createStatement();
-             ResultSet rs = statement.executeQuery(sb.toString())) {
+             ResultSet rs = statement.executeQuery(query)) {
             while (rs.next()) {
                 associatedPersonIds.add(rs.getInt("person_id"));
             }

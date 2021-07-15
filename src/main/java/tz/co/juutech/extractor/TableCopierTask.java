@@ -35,35 +35,34 @@ public class TableCopierTask implements Callable<Void> {
                 Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
             statement.execute("set foreign_key_checks=0");
-            StringBuilder createTableSql = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
-                    .append(AppProperties.getInstance().getNewDatabaseName())
-                    .append(".").append(this.table).append(" LIKE ")
-                    .append(AppProperties.getInstance().getDatabaseName())
-                    .append(".").append(this.table);
-
-            statement.execute(createTableSql.toString());
+            ExtractionUtils.copyOnlyStructure(this.table);
 
             resultSet = statement.executeQuery(ExtractionUtils.getCountingQuery(table, condition));
             resultSet.next();
             int countToMove = resultSet.getInt(1);
             int batchSize = AppProperties.getInstance().getBatchSize();
             if(countToMove > batchSize) {
-                LOGGER.trace("Copying {} records from {} in batches of {} number of records at time", countToMove, this.table, batchSize);
+                LOGGER.trace("Copying {} records from {} in batches of {}", countToMove, this.table, batchSize);
                 int start = 0;
                 int temp = countToMove;
                 String copyingSql;
                 // TODO: Assuming the openmrs convention where primary key column is always table_id, need to find a robust way of obtaining this.
                 String orderColumn = table + "_id";
                 int batchCount = 1;
+                int totalCopied = 0;
                 while (temp % batchSize > 0) {
                     if (temp / batchSize > 0) {
-                        LOGGER.trace("Copying batch # {} of {} table: {} records", batchCount++, this.table, batchSize);
+                        LOGGER.trace("Copying batch # {} of {} table, records copied:  {}, remaining: {}", batchCount++, this.table, totalCopied,
+                                countToMove - totalCopied);
                         copyingSql = ExtractionUtils.getCopyingSQLWithOrderAndPaging(table, condition, orderColumn, start, batchSize);
                         temp -= batchSize;
+                        totalCopied += batchSize;
                     } else {
-                        LOGGER.trace("Copying batch # {} of {} table: {} records", batchCount++, this.table, temp);
+                        LOGGER.trace("Copying batch # {} of {} table, records copied:  {}, remaining: {}", batchCount++, this.table, totalCopied,
+                                countToMove - totalCopied);
                         copyingSql = ExtractionUtils.getCopyingSQLWithOrderAndPaging(table, condition, orderColumn, start, temp);
                         temp = 0;
+                        totalCopied += temp;
                     }
                     start += batchSize;
                     LOGGER.debug("Running SQL statement: {}", copyingSql);
@@ -77,7 +76,7 @@ public class TableCopierTask implements Callable<Void> {
             }
 
             connection.commit();
-            LOGGER.debug("Done copying records for table {}", this.table);
+            LOGGER.debug("Done copying {} records for table {}", countToMove, this.table);
             return null;
         } catch (SQLException e) {
             LOGGER.error("An error has occured while copying records for table {}", this.table, e);
