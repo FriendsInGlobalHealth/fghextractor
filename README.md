@@ -64,6 +64,13 @@ batch.size=20000
 log.level=trace
 ```
 
+To run the application change into the directory containing the executable jar file then run the as follows, also this is the same location where the
+_application.properties_ file is located.
+ 
+**Note** Replace the \<version> with an actual version number for example for 1.0.0 it would be `fghextractor-1.0.0-fat-jar.jar`
+```
+$ java -jar fghextractor-<version>-fat-jar.jar
+```
 ## Development
 The project is setup using maven. During development the developer requires an instance of MySQL with openmrs database.
 Also in order to simplify development the developer needs to provide the _dev-application.properties_ in _src/main/resources_ 
