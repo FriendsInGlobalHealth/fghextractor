@@ -62,6 +62,9 @@ public class ExtractionUtils {
 
             // Remove tables which we are only to copy structure
             tablesToMove.removeAll(AppProperties.getInstance().getOnlyStructureTables());
+
+            // Remove excluded tables
+            tablesToMove.removeAll(AppProperties.getInstance().getExcludedTables());
         }
         return tablesToMove;
     }

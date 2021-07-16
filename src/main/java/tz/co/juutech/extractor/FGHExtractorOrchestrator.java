@@ -52,11 +52,12 @@ public class FGHExtractorOrchestrator {
             List<String> otherTablesToBeCopied = ExtractionUtils.getListofTablesToMove(ConnectionPool.getConnection());
 
             // Copy tables which only have to be copied for structure
-            LOGGER.debug("Copying tables copied without data: {}", AppProperties.getInstance().getOnlyStructureTables());
             long startOfStep = System.currentTimeMillis();
-            ExtractionUtils.copyOnlyStructure(AppProperties.getInstance().getOnlyStructureTables());
-            LOGGER.debug("Time taken to copy tables for which we only want structure: {} ms", System.currentTimeMillis() - startOfStep);
-
+            if(!AppProperties.getInstance().getOnlyStructureTables().isEmpty()) {
+                LOGGER.debug("Copying tables copied without data: {}", AppProperties.getInstance().getOnlyStructureTables());
+                ExtractionUtils.copyOnlyStructure(AppProperties.getInstance().getOnlyStructureTables());
+                LOGGER.debug("Time taken to copy tables for which we only want structure: {} ms", System.currentTimeMillis() - startOfStep);
+            }
             // Get the list of patients to copy.
             startOfStep = System.currentTimeMillis();
             String patientListQuery = ExtractionUtils.getPatientListQueryFromFile();
@@ -79,6 +80,17 @@ public class FGHExtractorOrchestrator {
             List<Future<Set<TableReferencingAnother>>> futures = service.invokeAll(Arrays.asList(personTablesTask, patientTablesTask));
             Set<TableReferencingAnother> personReferencingTables = futures.get(0).get();
             Set<TableReferencingAnother> patientReferencingTables = futures.get(1).get();
+
+            // Remove excluded tables
+            if(!AppProperties.getInstance().getExcludedTables().isEmpty()) {
+                personReferencingTables = personReferencingTables.stream()
+                        .filter(personRefTable -> !AppProperties.getInstance().getExcludedTables().contains(personRefTable.getTable()))
+                        .collect(Collectors.toSet());
+
+                patientReferencingTables = patientReferencingTables.stream()
+                        .filter(patientRefTable -> !AppProperties.getInstance().getExcludedTables().contains(patientRefTable.getTable()))
+                        .collect(Collectors.toSet());
+            }
 
             List<TableCopierTask> tobeInvoked = new ArrayList<>();
             // relationship table has two columns person_a and person_b both referencing person(person_id). This means one record will be copied twice

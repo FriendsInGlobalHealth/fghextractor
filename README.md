@@ -12,7 +12,7 @@ In the projects root directory, build the application using maven (Should be ver
 $ mvn clean package
 ```
 
-The build produces two artifacts in the _target_ directory namely _fgh-extractor-<version>.jar_ and _fgh-extractor-<version>-jar-with-dependencies.jar_.
+The build produces two artifacts in the _target_ directory namely _fgh-extractor-\<version>.jar_ and _fgh-extractor-\<version>-fat-jar.jar_.
 The later is executable by _java_ runtime. To run the app you need to provide the _application.properties_ file placing it
 in the same directory as the executable jar file. The content of file are as follows.
 ```properties
@@ -37,6 +37,7 @@ excluded.tables=
  
 # Tables for which you only want to copy structure.
 # The list provided below is default. If you don't specify this then the default will take effect.
+# If you want to include all tables then leave this blank
 copy.only.structure=hl7_in_archive, hl7_in_error, hl7_in_queue, hl7_source
  
 # Location ID of the location for which you wish to extract patient data.
@@ -53,10 +54,13 @@ end.date=<end date>
 end.date.pattern=<end date patter>
  
 
-# Whether to drop the newly created database after backup
+# Whether to drop the newly created database after backup to sql dump file.
 drop.newDb.after=true
+    
+# The batch sizes to optimize the procedure when the records to be copied are too many. (default is 20000)
+batch.size=20000
  
-# Application log level. (Currently the application is logging on console)
+# Application log level. (Currently the application is logging on console, default is trace)
 log.level=trace
 ```
 

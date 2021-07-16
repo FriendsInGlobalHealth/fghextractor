@@ -29,7 +29,6 @@ public class AppProperties {
     public final static String JDBC_URL_PROP = "jdbc.url";
     public final static String DB_PASSWORD_PROP = "db.password";
     public final static String DB_USERNAME_PROP = "db.username";
-    public final static String ENCOUNTER_TYPE_ID_PROP = "encounterType.id";
     public final static String LOCATION_ID_PROP = "location.id";
     public final static String END_DATE_PROP = "end.date";
     public final static String END_DATE_PATTERN_PROP = "end.date.pattern";
@@ -48,7 +47,6 @@ public class AppProperties {
 
     private static AppProperties appProperties = null;
     private static final Properties APP_PROPS = new Properties();
-    private Integer encounterTypeId;
     private Integer locationId;
     private LocalDate endDate;
     private DateTimeFormatter endDateFormatter;
@@ -79,7 +77,6 @@ public class AppProperties {
                 // Apply the custom ones from user
                 applyPropertiesFromUser();
 
-                appProperties.encounterTypeId = Integer.valueOf(APP_PROPS.getProperty(ENCOUNTER_TYPE_ID_PROP));
                 try {
                     appProperties.locationId = Integer.valueOf(APP_PROPS.getProperty(LOCATION_ID_PROP));
                 } catch (NumberFormatException e) {
@@ -104,7 +101,13 @@ public class AppProperties {
                 String onlyStructureTables = APP_PROPS.getProperty(ONLY_STRUCTURE_TABLES_PROP, "");
                 if(!StringUtils.isNullOrEmpty(onlyStructureTables)) {
                     String[] explodedList = onlyStructureTables.split(",");
-                    appProperties.onlyStructureTables = Arrays.stream(explodedList).map(excludedTable -> excludedTable.trim()).collect(Collectors.toSet());
+                    appProperties.onlyStructureTables = Arrays.stream(explodedList).map(tableName -> tableName.trim()).collect(Collectors.toSet());
+                }
+
+                String excludedTables = APP_PROPS.getProperty(EXCLUDED_TABLES_PROP, "");
+                if(!StringUtils.isNullOrEmpty(excludedTables)) {
+                    String[] explodedList = excludedTables.split(",");
+                    appProperties.excludedTables = Arrays.stream(explodedList).map(tableName -> tableName.trim()).collect(Collectors.toSet());
                 }
 
                 try {
@@ -138,10 +141,6 @@ public class AppProperties {
 
     public String getDbPassword() {
         return APP_PROPS.getProperty(DB_PASSWORD_PROP);
-    }
-
-    public Integer getEncounterTypeId() {
-        return encounterTypeId;
     }
 
     public Integer getLocationId() {
@@ -227,7 +226,7 @@ public class AppProperties {
 
     private static Properties applyPropertiesFromUser() {
         String dir = System.getProperty("user.dir");
-        String filePath = null;
+        String filePath;
         if(dir.endsWith(File.separator)) {
             filePath = dir + APPLICATION_PROPERTIES_FILENAME;
         } else {
@@ -252,31 +251,5 @@ public class AppProperties {
         }
 
         return APP_PROPS;
-    }
-
-    class ObsProperty {
-        Integer conceptId;
-        String valueColumn;
-        String value;
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof ObsProperty)) return false;
-
-            ObsProperty that = (ObsProperty) o;
-
-            if (!conceptId.equals(that.conceptId)) return false;
-            if (!valueColumn.equals(that.valueColumn)) return false;
-            return value.equals(that.value);
-        }
-
-        @Override
-        public int hashCode() {
-            int result = conceptId.hashCode();
-            result = 31 * result + valueColumn.hashCode();
-            result = 31 * result + value.hashCode();
-            return result;
-        }
     }
 }

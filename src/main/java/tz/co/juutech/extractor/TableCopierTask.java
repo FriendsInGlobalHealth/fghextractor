@@ -52,14 +52,14 @@ public class TableCopierTask implements Callable<Void> {
                 int totalCopied = 0;
                 while (temp % batchSize > 0) {
                     if (temp / batchSize > 0) {
-                        LOGGER.trace("Copying batch # {} of {} table, records copied:  {}, remaining: {}", batchCount++, this.table, totalCopied,
-                                countToMove - totalCopied);
+                        LOGGER.trace("Copying batch # {} of {} table, copied:  {}, copying: {}, remaining: {}", batchCount++, this.table, totalCopied,
+                                batchSize, countToMove - totalCopied);
                         copyingSql = ExtractionUtils.getCopyingSQLWithOrderAndPaging(table, condition, orderColumn, start, batchSize);
                         temp -= batchSize;
                         totalCopied += batchSize;
                     } else {
-                        LOGGER.trace("Copying batch # {} of {} table, records copied:  {}, remaining: {}", batchCount++, this.table, totalCopied,
-                                countToMove - totalCopied);
+                        LOGGER.trace("Copying batch # {} of {} table, copied:  {}, copying: {}, remaining: {}", batchCount++, this.table, totalCopied,
+                                temp, countToMove - totalCopied);
                         copyingSql = ExtractionUtils.getCopyingSQLWithOrderAndPaging(table, condition, orderColumn, start, temp);
                         temp = 0;
                         totalCopied += temp;
