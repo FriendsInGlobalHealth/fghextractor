@@ -31,6 +31,7 @@ public class TableCopierTask implements Callable<Void> {
     @Override
     public Void call() throws SQLException {
         ResultSet resultSet = null;
+        String copyingSql = null;
         try (   Connection connection = ConnectionPool.getConnection();
                 Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
@@ -45,7 +46,6 @@ public class TableCopierTask implements Callable<Void> {
                 LOGGER.trace("Copying {} records from {} in batches of {}", countToMove, this.table, batchSize);
                 int start = 0;
                 int temp = countToMove;
-                String copyingSql;
                 // TODO: Assuming the openmrs convention where primary key column is always table_id, need to find a robust way of obtaining this.
                 String orderColumn = table + "_id";
                 int batchCount = 1;
@@ -70,7 +70,7 @@ public class TableCopierTask implements Callable<Void> {
                 }
             } else {
                 // few records to move.
-                String copyingSql = ExtractionUtils.getCopyingSQL(table, condition);
+                copyingSql = ExtractionUtils.getCopyingSQL(table, condition);
                 LOGGER.debug("Running SQL statement: {}", copyingSql);
                 statement.execute(copyingSql);
             }
@@ -79,7 +79,7 @@ public class TableCopierTask implements Callable<Void> {
             LOGGER.debug("Done copying {} records for table {}", countToMove, this.table);
             return null;
         } catch (SQLException e) {
-            LOGGER.error("An error has occured while copying records for table {}", this.table, e);
+            LOGGER.error("An error has occured while copying records for table {}, running SQL: {}", this.table, copyingSql, e);
             throw e;
         } finally {
             if(resultSet != null) {
