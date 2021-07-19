@@ -3,11 +3,17 @@ package tz.co.juutech.extractor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -16,6 +22,7 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -75,8 +82,9 @@ public class ExtractionUtils {
                 .append(".").append(table).append(" (SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName())
                 .append(".").append(table);
         if(condition != null) {
-            sql.append(" AS t WHERE ").append(condition).append(")");
+            sql.append(" AS t WHERE ").append(condition);
         }
+        sql.append(")");
         return sql.toString();
     }
 
@@ -158,15 +166,28 @@ public class ExtractionUtils {
     }
 
     public static String getPatientListQueryFromFile() throws URISyntaxException, IOException {
-        URL sqlFileUrl = FGHExtractorOrchestrator.class.getResource(File.separator.concat(AppProperties.getInstance().getPatientListQueryFileName()));
-        return Files.lines(Paths.get(sqlFileUrl.toURI())).collect(Collectors.joining(" "))
-                .replace("sourceDatabase", AppProperties.getInstance().getDatabaseName())
-                .replace(":location", AppProperties.getInstance().getLocationId().toString())
-                .replace(":endDate", String.format("'%s'", AppProperties.getInstance().getFormattedEndDate("yyyy-MM-dd")));
+        URI sqlFileUri = FGHExtractorOrchestrator.class.getResource(File.separator.concat(AppProperties.getInstance().getPatientListQueryFileName()))
+                .toURI();
+
+        // Deal with jar. (This is really a hacky way to deal with this)
+        if(sqlFileUri.toString().contains("!")) {
+            final String[] array = sqlFileUri.toString().split("!");
+            try (final FileSystem fs = FileSystems.newFileSystem(URI.create(array[0]), new HashMap<>())) {
+                return getQueryFormPath(fs.getPath(array[1]));
+            }
+        }
+        return getQueryFormPath(Paths.get(sqlFileUri));
     }
 
     public static String getDumpFilename() {
         return new StringBuilder(AppProperties.getInstance().getNewDatabaseName()).append(".")
                 .append(LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME)).append(".sql").toString();
+    }
+
+    private static String getQueryFormPath(Path path) throws IOException {
+        return Files.lines(path).collect(Collectors.joining(" "))
+                .replace("sourceDatabase", AppProperties.getInstance().getDatabaseName())
+                .replace(":location", AppProperties.getInstance().getLocationId().toString())
+                .replace(":endDate", String.format("'%s'", AppProperties.getInstance().getFormattedEndDate("yyyy-MM-dd")));
     }
 }
