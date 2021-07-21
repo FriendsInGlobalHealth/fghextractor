@@ -196,6 +196,9 @@ public class FGHExtractorOrchestrator {
                 TableCopierTask usersTask = new TableCopierTask("users", usersCondition.toString());
                 usersTask.call();
 
+                // Copy user_property & user_role
+                new TableCopierTask("user_property", usersCondition.toString()).call();
+                new TableCopierTask("user_role", usersCondition.toString()).call();
                 copyAssociatedPersonAndPatientTablesRecords("users", personReferencingTables, patientReferencingTables);
             }
 
