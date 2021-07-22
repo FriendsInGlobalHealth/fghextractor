@@ -15,12 +15,10 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -49,7 +47,7 @@ public class FGHExtractorOrchestrator {
             LOGGER.debug("Creating the new database {}", AppProperties.getInstance().getNewDatabaseName());
             ExtractionUtils.createNewDatabase(ConnectionPool.getConnection());
 
-            List<String> otherTablesToBeCopied = ExtractionUtils.getListofTablesToMove(ConnectionPool.getConnection());
+            List<String> otherTablesToBeCopied = ExtractionUtils.getListOfTablesToMove(ConnectionPool.getConnection());
 
             // Copy tables which only have to be copied for structure
             long startOfStep = System.currentTimeMillis();
@@ -74,8 +72,8 @@ public class FGHExtractorOrchestrator {
             LOGGER.debug("Time taken to copy patient & person table records: {} ms", System.currentTimeMillis() - startOfStep);
             // Tables referencing person.
             startOfStep = System.currentTimeMillis();
-            TablesReferencingAnotherTask personTablesTask = new TablesReferencingAnotherTask(ConnectionPool.getConnection(), "person", "person_id");
-            TablesReferencingAnotherTask patientTablesTask = new TablesReferencingAnotherTask(ConnectionPool.getConnection(), "patient", "patient_id");
+            TablesReferencingAnotherTask personTablesTask = new TablesReferencingAnotherTask("person", "person_id", "patient");
+            TablesReferencingAnotherTask patientTablesTask = new TablesReferencingAnotherTask("patient", "patient_id");
 
             List<Future<Set<TableReferencingAnother>>> futures = service.invokeAll(Arrays.asList(personTablesTask, patientTablesTask));
             Set<TableReferencingAnother> personReferencingTables = futures.get(0).get();
@@ -161,16 +159,24 @@ public class FGHExtractorOrchestrator {
             // Move other tables.
             if (!otherTablesToBeCopied.isEmpty()) {
                 LOGGER.info("Copying rest of tables to be copied along with data: {}", otherTablesToBeCopied);
+                tobeInvoked.clear();
                 for (String table : otherTablesToBeCopied) {
-                    service.submit(new TableCopierTask(table));
+                    tobeInvoked.add(new TableCopierTask(table));
                 }
+
+                // Block to ensure that all records are copied before fetching the users being referenced in them.
+                service.invokeAll(tobeInvoked);
             }
 
             // Copy users (Find users referenced in every table).
             Set<TableReferencingAnother> tablesReferencingUsers =
-                    new TablesReferencingAnotherTask(ConnectionPool.getConnection(), "users", "user_id").call();
+                    new TablesReferencingAnotherTask( "users", "user_id", "user_property", "user_role").call();
+            List<TableReferencingAnother> sortedList = new ArrayList(tablesReferencingUsers);
+            Collections.sort(sortedList);
+            LOGGER.trace("Tables Referencing users: {}", sortedList);
 
             Set<Integer> usersToCopy = new HashSet<>();
+            Set<Integer> alreadyCopiedUsers = new HashSet<>();
             for (TableReferencingAnother table : tablesReferencingUsers) {
                 LOGGER.debug("Fetching user ids from {}.{}", table.getTable(), table.getColumnName());
                 StringBuilder sb = new StringBuilder("SELECT DISTINCT ").append(table.getColumnName()).append(" FROM ")
@@ -185,10 +191,24 @@ public class FGHExtractorOrchestrator {
                         usersToCopy.add(rs.getInt(table.getColumnName()));
                     }
                 }
+
+                // Get already copied users
+                String query = "SELECT user_id FROM ".concat(AppProperties.getInstance().getNewDatabaseName()).concat(".users");
+                try (Connection con = ConnectionPool.getConnection();
+                     Statement statement = con.createStatement();
+                     ResultSet rs = statement.executeQuery(query)) {
+
+                    while (rs.next()) {
+                        alreadyCopiedUsers.add(rs.getInt("user_id"));
+                    }
+                }
+
+                usersToCopy.removeAll(alreadyCopiedUsers);
             }
 
             if (!usersToCopy.isEmpty()) {
                 LOGGER.debug("Copying {} users", usersToCopy.size());
+                LOGGER.trace("User IDs of users to be copied are: {}", usersToCopy);
                 StringBuilder usersCondition = new StringBuilder("t.user_id in (");
                 usersToCopy.forEach(id -> usersCondition.append(id).append(","));
                 usersCondition.deleteCharAt(usersCondition.length() - 1);
@@ -196,9 +216,14 @@ public class FGHExtractorOrchestrator {
                 TableCopierTask usersTask = new TableCopierTask("users", usersCondition.toString());
                 usersTask.call();
 
-                // Copy user_property & user_role
-                new TableCopierTask("user_property", usersCondition.toString()).call();
-                new TableCopierTask("user_role", usersCondition.toString()).call();
+                // Copy user_property & user_role (including the excluded users)
+                usersToCopy.addAll(alreadyCopiedUsers);
+                StringBuilder condition = new StringBuilder("t.user_id in (");
+                usersToCopy.forEach(id -> condition.append(id).append(","));
+                condition.deleteCharAt(condition.length() - 1);
+                condition.append(")");
+                new TableCopierTask("user_property", condition.toString()).call();
+                new TableCopierTask("user_role", condition.toString()).call();
                 copyAssociatedPersonAndPatientTablesRecords("users", personReferencingTables, patientReferencingTables);
             }
 

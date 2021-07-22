@@ -1,5 +1,6 @@
 package tz.co.juutech.extractor;
 
+import com.sun.javafx.UnmodifiableArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,9 +23,13 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 /**
@@ -32,11 +37,32 @@ import java.util.stream.Collectors;
  */
 public class ExtractionUtils {
     private static List<String> tablesToMove = null;
+    private static List<String> allTables = null;
     private static final Logger LOGGER = LoggerFactory.getLogger(ExtractionUtils.class);
 
-    public static List<String> getListofTablesToMove(Connection connection) throws SQLException {
+    public static List<String> getListOfAllTables() throws SQLException {
+        if(allTables == null) {
+            List<String> tables = new ArrayList<>();
+            try (Connection connection = ConnectionPool.getConnection();
+                ResultSet rs = connection.getMetaData().getTables(null, AppProperties.getInstance().getDatabaseName(), null, null)) {
+                while (rs.next()) {
+                    tables.add(rs.getString("TABLE_NAME"));
+                }
+            }
+            allTables = Collections.unmodifiableList(tables);
+        }
+        return allTables;
+    }
+
+    /**
+     * Returns a list of tables to be moved (Note: this list changes as the execution progress)
+     * @param connection
+     * @return
+     * @throws SQLException
+     */
+    public static List<String> getListOfTablesToMove(Connection connection) throws SQLException {
         if(tablesToMove == null) {
-            tablesToMove = new ArrayList<>();
+            tablesToMove = new CopyOnWriteArrayList<>();
             try {
                 ResultSet rs = connection.getMetaData().getTables(null, AppProperties.getInstance().getDatabaseName(), null, null);
 
