@@ -153,6 +153,18 @@ public class ExtractionUtils {
         }
     }
 
+    public static boolean databaseExists(String database) throws SQLException {
+        String sql = "SHOW DATABASES LIKE '".concat(database).concat("'");
+        try (Connection connection = ConnectionPool.getConnection();
+            Statement statement = connection.createStatement();
+            ResultSet resultSet = statement.executeQuery(sql)) {
+            return resultSet.next();
+        } catch (SQLException e) {
+            LOGGER.error("An error occurred while checking whether database named {} exists");
+            throw e;
+        }
+    }
+
     public static void copyOnlyStructure(final Set<String> tables) throws SQLException {
         for (String table : tables) {
             copyOnlyStructure(table);

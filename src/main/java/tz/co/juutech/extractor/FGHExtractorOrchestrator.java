@@ -3,6 +3,7 @@ package tz.co.juutech.extractor;
 import ch.qos.logback.classic.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tz.co.juutech.extractor.exception.DatabaseAlreadyExistsException;
 import tz.co.juutech.extractor.exception.InvalidMandatoryPropertyValueException;
 
 import java.io.BufferedReader;
@@ -35,11 +36,18 @@ public class FGHExtractorOrchestrator {
         LOGGER.info("START TIME: {}", LocalDateTime.now());
         LOGGER.info("Effective applicatin properties being used are {}", AppProperties.getInstance().toString());
 
+        LOGGER.trace("Checking if the chosen new database name {} already exists", AppProperties.getInstance().getNewDatabaseName());
+        if(ExtractionUtils.databaseExists(AppProperties.getInstance().getNewDatabaseName())) {
+            LOGGER.error("The database {} already exists. Either drop it or use a different name", AppProperties.getInstance().getNewDatabaseName());
+            throw new DatabaseAlreadyExistsException();
+        }
+
         if(AppProperties.getInstance().getLocationId() == null) {
             LOGGER.error("All mandatory properties must be set with valid values");
             throw new InvalidMandatoryPropertyValueException(AppProperties.LOCATION_ID_PROP,
                     String.valueOf(AppProperties.getInstance().getLocationId()));
         }
+
 
         ExecutorService service = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
         try {
