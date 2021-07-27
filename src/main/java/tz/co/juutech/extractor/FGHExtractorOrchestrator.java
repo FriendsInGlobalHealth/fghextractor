@@ -42,10 +42,9 @@ public class FGHExtractorOrchestrator {
             throw new DatabaseAlreadyExistsException();
         }
 
-        if(AppProperties.getInstance().getLocationId() == null) {
+        if(AppProperties.getInstance().getLocationsIds().isEmpty()) {
             LOGGER.error("All mandatory properties must be set with valid values");
-            throw new InvalidMandatoryPropertyValueException(AppProperties.LOCATION_ID_PROP,
-                    String.valueOf(AppProperties.getInstance().getLocationId()));
+            throw new InvalidMandatoryPropertyValueException(AppProperties.LOCATIONS_IDS_PROP, AppProperties.getInstance().getLocationsIdsString());
         }
 
 

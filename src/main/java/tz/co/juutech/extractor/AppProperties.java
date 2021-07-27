@@ -11,7 +11,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
@@ -29,7 +28,7 @@ public class AppProperties {
     public final static String JDBC_URL_PROP = "jdbc.url";
     public final static String DB_PASSWORD_PROP = "db.password";
     public final static String DB_USERNAME_PROP = "db.username";
-    public final static String LOCATION_ID_PROP = "location.id";
+    public final static String LOCATIONS_IDS_PROP = "locations.ids";
     public final static String END_DATE_PROP = "end.date";
     public final static String END_DATE_PATTERN_PROP = "end.date.pattern";
     public final static String NEW_DB_NAME_PROP = "newDb.name";
@@ -47,7 +46,8 @@ public class AppProperties {
 
     private static AppProperties appProperties = null;
     private static final Properties APP_PROPS = new Properties();
-    private Integer locationId;
+    private String locationsIdsString;
+    private Set<Integer> locationsIds = new HashSet<>();
     private LocalDate endDate;
     private DateTimeFormatter endDateFormatter;
     private String host;
@@ -77,12 +77,17 @@ public class AppProperties {
                 // Apply the custom ones from user
                 applyPropertiesFromUser();
 
-                try {
-                    appProperties.locationId = Integer.valueOf(APP_PROPS.getProperty(LOCATION_ID_PROP));
-                } catch (NumberFormatException e) {
-                    throw new InvalidMandatoryPropertyValueException(LOCATION_ID_PROP, APP_PROPS.getProperty(LOCATION_ID_PROP));
+                String[] locIds = APP_PROPS.getProperty(LOCATIONS_IDS_PROP).split(",");
+                for(String locId: locIds) {
+                    try {
+                        appProperties.locationsIds.add(Integer.parseInt(locId.trim()));
+                    } catch (NumberFormatException e) {
+                        LOGGER.error("The provided location Id {} is invalid, please use numbers", locId);
+                        throw new InvalidMandatoryPropertyValueException(LOCATIONS_IDS_PROP, APP_PROPS.getProperty(LOCATIONS_IDS_PROP));
+                    }
                 }
 
+                appProperties.locationsIdsString = APP_PROPS.getProperty(LOCATIONS_IDS_PROP);
                 try {
                     String datePattern = APP_PROPS.getProperty(END_DATE_PATTERN_PROP, DEFAULT_END_DATE_PATTERN);
                     appProperties.endDateFormatter = DateTimeFormatter.ofPattern(datePattern);
@@ -143,8 +148,12 @@ public class AppProperties {
         return APP_PROPS.getProperty(DB_PASSWORD_PROP);
     }
 
-    public Integer getLocationId() {
-        return locationId;
+    public String getLocationsIdsString() {
+        return locationsIdsString;
+    }
+
+    public Set<Integer> getLocationsIds() {
+        return locationsIds;
     }
 
     public String getNewDatabaseName() {

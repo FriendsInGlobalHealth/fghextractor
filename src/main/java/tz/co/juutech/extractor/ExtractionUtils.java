@@ -1,16 +1,12 @@
 package tz.co.juutech.extractor;
 
-import com.sun.javafx.UnmodifiableArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URL;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -26,9 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -225,7 +219,7 @@ public class ExtractionUtils {
     private static String getQueryFormPath(Path path) throws IOException {
         return Files.lines(path).collect(Collectors.joining(" "))
                 .replace("sourceDatabase", AppProperties.getInstance().getDatabaseName())
-                .replace(":location", AppProperties.getInstance().getLocationId().toString())
+                .replace(":locations", AppProperties.getInstance().getLocationsIdsString())
                 .replace(":endDate", String.format("'%s'", AppProperties.getInstance().getFormattedEndDate("yyyy-MM-dd")));
     }
 }

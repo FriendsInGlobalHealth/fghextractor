@@ -40,9 +40,10 @@ excluded.tables=
 # If you want to include all tables then leave this blank
 copy.only.structure=hl7_in_archive, hl7_in_error, hl7_in_queue, hl7_source
  
-# Location ID of the location for which you wish to extract patient data.
-# Replace <location ID> with the actual value of the location ID you wish to extract.
-location.id=<location ID>
+# Comma separated list of Locations IDs of the locations for which you wish to extract patient data.
+# Replace <locations IDs> with the actual values of the locations IDs you wish to extract.
+# For example locations.ids=12,23,45
+locations.ids=<locations IDS>
  
 # The end date to extract records. If this value is not specified the date of the day when the application
 # is run is the default end date. Replace <end date> with an actual date or leave it blank to let default 
