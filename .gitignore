@@ -70,3 +70,4 @@ dev-application.properties
 
 # Test database name for extraction
 chabeco*
+*.gz
