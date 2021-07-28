@@ -45,6 +45,12 @@ copy.only.structure=hl7_in_archive, hl7_in_error, hl7_in_queue, hl7_source
 # For example locations.ids=12,23,45
 locations.ids=<locations IDS>
  
+# Whether other patient related data which are location based should be restricted to chosen locations. For example,
+# when the cohort to be extracted and copied has a patient that have encounters which are associated with another location, 
+# the user has the freedom to choose include those by specifying false for this property.
+# Default value is false.
+restrict.extraction=<true or false>
+    
 # The end date to extract records. If this value is not specified the date of the day when the application
 # is run is the default end date. Replace <end date> with an actual date or leave it blank to let default 
 # take effect.

@@ -17,9 +17,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -54,7 +57,7 @@ public class FGHExtractorOrchestrator {
             LOGGER.debug("Creating the new database {}", AppProperties.getInstance().getNewDatabaseName());
             ExtractionUtils.createNewDatabase(ConnectionPool.getConnection());
 
-            List<String> otherTablesToBeCopied = ExtractionUtils.getListOfTablesToMove(ConnectionPool.getConnection());
+            List<String> otherTablesToBeCopied = ExtractionUtils.getListOfTablesToMove();
 
             // Copy tables which only have to be copied for structure
             long startOfStep = System.currentTimeMillis();
@@ -79,12 +82,23 @@ public class FGHExtractorOrchestrator {
             LOGGER.debug("Time taken to copy patient & person table records: {} ms", System.currentTimeMillis() - startOfStep);
             // Tables referencing person.
             startOfStep = System.currentTimeMillis();
-            TablesReferencingAnotherTask personTablesTask = new TablesReferencingAnotherTask("person", "person_id", "patient");
-            TablesReferencingAnotherTask patientTablesTask = new TablesReferencingAnotherTask("patient", "patient_id");
+            List<TablesReferencingAnotherTask> tablesReferencingAnotherTasks = new ArrayList<>(Arrays.asList(
+                    new TablesReferencingAnotherTask("person", "person_id", "patient"),
+                    new TablesReferencingAnotherTask("patient", "patient_id")));
 
-            List<Future<Set<TableReferencingAnother>>> futures = service.invokeAll(Arrays.asList(personTablesTask, patientTablesTask));
+            if(AppProperties.getInstance().getRestrictExtraction()) {
+                tablesReferencingAnotherTasks.add(new TablesReferencingAnotherTask("location", "location_id", "location"));
+            }
+            List<Future<Set<TableReferencingAnother>>> futures = service.invokeAll(tablesReferencingAnotherTasks);
             Set<TableReferencingAnother> personReferencingTables = futures.get(0).get();
             Set<TableReferencingAnother> patientReferencingTables = futures.get(1).get();
+
+            Set<TableReferencingAnother> locationReferringTables = Collections.EMPTY_SET;
+            Map<String, TableReferencingAnother> locationReferringTablesMap = new HashMap<>();
+            if(AppProperties.getInstance().getRestrictExtraction()) {
+                locationReferringTables = futures.get(2).get();
+                locationReferringTables.forEach(locRefTable -> locationReferringTablesMap.put(locRefTable.getTable(), locRefTable));
+            }
 
             // Remove excluded tables
             if(!AppProperties.getInstance().getExcludedTables().isEmpty()) {
@@ -94,6 +108,10 @@ public class FGHExtractorOrchestrator {
 
                 patientReferencingTables = patientReferencingTables.stream()
                         .filter(patientRefTable -> !AppProperties.getInstance().getExcludedTables().contains(patientRefTable.getTable()))
+                        .collect(Collectors.toSet());
+
+                locationReferringTables = locationReferringTables.stream()
+                        .filter(locationRefTable -> !AppProperties.getInstance().getExcludedTables().contains(locationRefTable.getTable()))
                         .collect(Collectors.toSet());
             }
 
@@ -114,6 +132,12 @@ public class FGHExtractorOrchestrator {
                     }
                     StringBuilder tableCondition = new StringBuilder("t.").append(personRef.getColumnName()).append(" IN (SELECT person_id FROM ")
                             .append(AppProperties.getInstance().getNewDatabaseName()).append(".person)");
+                    if(AppProperties.getInstance().getRestrictExtraction() && locationReferringTablesMap.containsKey(personRef.getTable())) {
+                        // Add the location condition
+                        TableReferencingAnother foundLocationRef = locationReferringTablesMap.get(personRef.getTable());
+                        tableCondition.append(" AND t.").append(foundLocationRef.getColumnName()).append(" IN (")
+                                .append(AppProperties.getInstance().getLocationsIdsString()).append(")");
+                    }
                     tobeInvoked.add(new TableCopierTask(personRef.getTable(), tableCondition.toString()));
                 }
             }
@@ -126,6 +150,13 @@ public class FGHExtractorOrchestrator {
                 for (TableReferencingAnother patientRef : patientReferencingTables) {
                     StringBuilder tableCondition = new StringBuilder("t.").append(patientRef.getColumnName()).append(" in (select patient_id from ")
                             .append(AppProperties.getInstance().getNewDatabaseName()).append(".patient)");
+
+                    if(AppProperties.getInstance().getRestrictExtraction() && locationReferringTablesMap.containsKey(patientRef.getTable())) {
+                        // Add the location condition
+                        TableReferencingAnother foundLocationRef = locationReferringTablesMap.get(patientRef.getTable());
+                        tableCondition.append(" AND t.").append(foundLocationRef.getColumnName()).append(" IN (")
+                                .append(AppProperties.getInstance().getLocationsIdsString()).append(")");
+                    }
                     tobeInvoked.add(new TableCopierTask(patientRef.getTable(), tableCondition.toString()));
                 }
             }
@@ -140,7 +171,7 @@ public class FGHExtractorOrchestrator {
                     .append("t.").append(oneRelationshipForSpecialHandlingLater.getColumnName()).append(" IN (SELECT person_id FROM ")
                     .append(AppProperties.getInstance().getNewDatabaseName()).append(".person)");
             new TableCopierTask(oneRelationshipForSpecialHandlingLater.getTable(), secondRelationshipTableCondition.toString()).call();
-            copyAssociatedPersonAndPatientTablesRecords("relationship", personReferencingTables, patientReferencingTables);
+            copyAssociatedPersonAndPatientTablesRecords("relationship", personReferencingTables, patientReferencingTables, locationReferringTablesMap);
             LOGGER.debug("Time taken to copy table referencing patient & person tables: {} ms", System.currentTimeMillis() - startOfStep);
 
             // Special handling of encounter_provider & provider tables.
@@ -154,7 +185,7 @@ public class FGHExtractorOrchestrator {
             StringBuilder provCondition = new StringBuilder("t.provider_id NOT IN (SELECT provider_id FROM ")
                     .append(AppProperties.getInstance().getNewDatabaseName()).append(".provider)");
             new TableCopierTask("provider", provCondition.toString()).call();
-            copyAssociatedPersonAndPatientTablesRecords("provider", personReferencingTables, patientReferencingTables);
+            copyAssociatedPersonAndPatientTablesRecords("provider", personReferencingTables, patientReferencingTables, locationReferringTablesMap);
 
             // Copy patient_state records only for copied patients.
             LOGGER.trace("Copying patient_state records for copied patient_program records");
@@ -168,7 +199,15 @@ public class FGHExtractorOrchestrator {
                 LOGGER.info("Copying rest of tables to be copied along with data: {}", otherTablesToBeCopied);
                 tobeInvoked.clear();
                 for (String table : otherTablesToBeCopied) {
-                    tobeInvoked.add(new TableCopierTask(table));
+                    if(AppProperties.getInstance().getRestrictExtraction() && locationReferringTablesMap.containsKey(table)) {
+                        // Add the location condition
+                        TableReferencingAnother foundLocationRef = locationReferringTablesMap.get(table);
+                        StringBuilder tableCondition = new StringBuilder("t.").append(foundLocationRef.getColumnName()).append(" IN (")
+                                .append(AppProperties.getInstance().getLocationsIdsString()).append(")");
+                        tobeInvoked.add(new TableCopierTask(table, tableCondition.toString()));
+                    } else {
+                        tobeInvoked.add(new TableCopierTask(table));
+                    }
                 }
 
                 // Block to ensure that all records are copied before fetching the users being referenced in them.
@@ -231,7 +270,7 @@ public class FGHExtractorOrchestrator {
                 condition.append(")");
                 new TableCopierTask("user_property", condition.toString()).call();
                 new TableCopierTask("user_role", condition.toString()).call();
-                copyAssociatedPersonAndPatientTablesRecords("users", personReferencingTables, patientReferencingTables);
+                copyAssociatedPersonAndPatientTablesRecords("users", personReferencingTables, patientReferencingTables, locationReferringTablesMap);
             }
 
             service.shutdown();
@@ -305,8 +344,15 @@ public class FGHExtractorOrchestrator {
      * @return
      * @throws SQLException
      */
-    private static TableCopierTask copyReferencingTableRecordsTask(final TableReferencingAnother referencingTable, final String idsToCopy) throws SQLException {
+    private static TableCopierTask copyReferencingTableRecordsTask(final TableReferencingAnother referencingTable, final String idsToCopy,
+                                                                   final Map<String, TableReferencingAnother> locationRefsMap) throws SQLException {
         StringBuilder tableCondition = new StringBuilder("t.").append(referencingTable.getColumnName()).append(" in ").append(idsToCopy);
+        if(AppProperties.getInstance().getRestrictExtraction() && locationRefsMap != null && !locationRefsMap.isEmpty()
+                && locationRefsMap.containsKey(referencingTable.getTable())) {
+            TableReferencingAnother foundLocationRef = locationRefsMap.get(referencingTable.getTable());
+            tableCondition.append(" AND t.").append(foundLocationRef.getColumnName()).append(" IN (")
+                    .append(AppProperties.getInstance().getLocationsIdsString()).append(")");
+        }
         return new TableCopierTask(referencingTable.getTable(), tableCondition.toString());
     }
 
@@ -315,8 +361,9 @@ public class FGHExtractorOrchestrator {
         root.setLevel(Level.toLevel(AppProperties.getInstance().getLogLevel(), Level.TRACE));
     }
 
-    private static void copyAssociatedPersonAndPatientTablesRecords(String table, Set<TableReferencingAnother> personReferencingTables,
-                                                                    Set<TableReferencingAnother> patientReferencingTables) throws SQLException {
+    private static void copyAssociatedPersonAndPatientTablesRecords(final String table, final Set<TableReferencingAnother> personReferencingTables,
+                                                                    final Set<TableReferencingAnother> patientReferencingTables,
+                                                                    final Map<String, TableReferencingAnother> locationRefsMap) throws SQLException {
         LOGGER.debug("Fetching person ids for copied {} records whose corresponding person records are not yet copied", table);
         Set<Integer> associatedPersonIds = new HashSet<>();
         String query;
@@ -355,7 +402,7 @@ public class FGHExtractorOrchestrator {
             if (!personReferencingTables.isEmpty()) {
                 for (TableReferencingAnother personRef : personReferencingTables) {
                     if(table.equals(personRef.getTable())) continue;
-                    copyReferencingTableRecordsTask(personRef, setOfIds).call();
+                    copyReferencingTableRecordsTask(personRef, setOfIds, locationRefsMap).call();
                 }
             }
 
@@ -366,7 +413,7 @@ public class FGHExtractorOrchestrator {
             if (!patientReferencingTables.isEmpty()) {
                 for (TableReferencingAnother patientRef : patientReferencingTables) {
                     if(table.equals(patientRef.getTable())) continue;
-                    copyReferencingTableRecordsTask(patientRef, setOfIds).call();
+                    copyReferencingTableRecordsTask(patientRef, setOfIds, locationRefsMap).call();
                 }
             }
         }

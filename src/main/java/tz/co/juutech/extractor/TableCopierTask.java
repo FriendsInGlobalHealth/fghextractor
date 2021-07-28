@@ -71,7 +71,7 @@ public class TableCopierTask implements Callable<Void> {
             } else {
                 // few records to move.
                 copyingSql = ExtractionUtils.getCopyingSQL(table, condition);
-                LOGGER.debug("Running SQL statement: {}", copyingSql);
+                LOGGER.trace("Running SQL statement: {}", copyingSql);
                 statement.execute(copyingSql);
             }
 

@@ -36,7 +36,7 @@ public class ExtractionUtils {
 
     public static List<String> getListOfAllTables() throws SQLException {
         if(allTables == null) {
-            List<String> tables = new ArrayList<>();
+            List<String> tables = new CopyOnWriteArrayList<>();
             try (Connection connection = ConnectionPool.getConnection();
                 ResultSet rs = connection.getMetaData().getTables(null, AppProperties.getInstance().getDatabaseName(), null, null)) {
                 while (rs.next()) {
@@ -50,15 +50,14 @@ public class ExtractionUtils {
 
     /**
      * Returns a list of tables to be moved (Note: this list changes as the execution progress)
-     * @param connection
      * @return
      * @throws SQLException
      */
-    public static List<String> getListOfTablesToMove(Connection connection) throws SQLException {
+    public static List<String> getListOfTablesToMove() throws SQLException {
         if(tablesToMove == null) {
             tablesToMove = new CopyOnWriteArrayList<>();
-            try {
-                ResultSet rs = connection.getMetaData().getTables(null, AppProperties.getInstance().getDatabaseName(), null, null);
+            try (Connection connection = ConnectionPool.getConnection();
+                ResultSet rs = connection.getMetaData().getTables(null, AppProperties.getInstance().getDatabaseName(), null, null)){
 
                 while (rs.next()) {
                     tablesToMove.add(rs.getString("TABLE_NAME"));
@@ -66,16 +65,6 @@ public class ExtractionUtils {
             } catch (SQLException e){
                 LOGGER.error("An error while all tables from the source db {} ", AppProperties.getInstance().getDatabaseName(), e);
                 throw e;
-            } finally {
-                if(connection != null) {
-                    try {
-                        connection.close();
-                    } catch (SQLException e){}
-                }
-            }
-            // Remove excluded tables if any
-            if (AppProperties.getInstance().getExcludedTables().isEmpty()) {
-                tablesToMove.removeAll(AppProperties.getInstance().getExcludedTables());
             }
 
             // Remove patient & person

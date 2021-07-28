@@ -29,6 +29,7 @@ public class AppProperties {
     public final static String DB_PASSWORD_PROP = "db.password";
     public final static String DB_USERNAME_PROP = "db.username";
     public final static String LOCATIONS_IDS_PROP = "locations.ids";
+    public final static String RESTRICT_EXTRACTION_PROP = "restrict.extraction";
     public final static String END_DATE_PROP = "end.date";
     public final static String END_DATE_PATTERN_PROP = "end.date.pattern";
     public final static String NEW_DB_NAME_PROP = "newDb.name";
@@ -48,6 +49,7 @@ public class AppProperties {
     private static final Properties APP_PROPS = new Properties();
     private String locationsIdsString;
     private Set<Integer> locationsIds = new HashSet<>();
+    private Boolean restrictExtraction = Boolean.FALSE;
     private LocalDate endDate;
     private DateTimeFormatter endDateFormatter;
     private String host;
@@ -88,6 +90,8 @@ public class AppProperties {
                 }
 
                 appProperties.locationsIdsString = APP_PROPS.getProperty(LOCATIONS_IDS_PROP);
+                appProperties.restrictExtraction = Boolean.valueOf(APP_PROPS.getProperty(RESTRICT_EXTRACTION_PROP, "FALSE"));
+
                 try {
                     String datePattern = APP_PROPS.getProperty(END_DATE_PATTERN_PROP, DEFAULT_END_DATE_PATTERN);
                     appProperties.endDateFormatter = DateTimeFormatter.ofPattern(datePattern);
@@ -102,6 +106,7 @@ public class AppProperties {
                         appProperties.endDate = LocalDate.now();
                     }
                 }
+
                 appProperties.dropNewDbAfter = Boolean.valueOf(APP_PROPS.getProperty(DROP_NEW_DB_AFTER_PROP, "FALSE"));
                 String onlyStructureTables = APP_PROPS.getProperty(ONLY_STRUCTURE_TABLES_PROP, "");
                 if(!StringUtils.isNullOrEmpty(onlyStructureTables)) {
@@ -154,6 +159,10 @@ public class AppProperties {
 
     public Set<Integer> getLocationsIds() {
         return locationsIds;
+    }
+
+    public Boolean getRestrictExtraction() {
+        return restrictExtraction;
     }
 
     public String getNewDatabaseName() {
