@@ -86,7 +86,7 @@ public class ExtractionUtils {
     }
 
     public static String getCopyingSQL(final String table, final String condition) {
-        StringBuilder sql = new StringBuilder("INSERT INTO ")
+        StringBuilder sql = new StringBuilder("INSERT IGNORE INTO ")
                 .append(AppProperties.getInstance().getNewDatabaseName())
                 .append(".").append(table).append(" (SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName())
                 .append(".").append(table);
@@ -99,7 +99,7 @@ public class ExtractionUtils {
 
     public static String getCopyingSQLWithOrderAndPaging(final String table, final String condition, final String orderColumn,
                                                          final Integer startIndex, final Integer size) {
-        StringBuilder sql = new StringBuilder("INSERT INTO ")
+        StringBuilder sql = new StringBuilder("INSERT IGNORE INTO ")
                 .append(AppProperties.getInstance().getNewDatabaseName())
                 .append(".").append(table).append(" (SELECT * FROM ").append(AppProperties.getInstance().getDatabaseName())
                 .append(".").append(table);

@@ -48,6 +48,10 @@ public class TableCopierTask implements Callable<Void> {
                 int temp = countToMove;
                 // TODO: Assuming the openmrs convention where primary key column is always table_id, need to find a robust way of obtaining this.
                 String orderColumn = table + "_id";
+                if("users".equalsIgnoreCase(table)) {
+                    // users table is different in this case.
+                    orderColumn = "user_id";
+                }
                 int batchCount = 1;
                 int totalCopied = 0;
                 while (temp % batchSize > 0) {

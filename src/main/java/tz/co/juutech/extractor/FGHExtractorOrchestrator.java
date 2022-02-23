@@ -383,7 +383,7 @@ public class FGHExtractorOrchestrator {
             query = sb.toString();
         }
 
-        LOGGER.trace("Query fetching person records referenced by not yet copied: {} ", query);
+        LOGGER.trace("Query fetching person records referenced by {} but not yet copied: {} ", table, query);
 
         try (Connection con = ConnectionPool.getConnection();
              Statement statement = con.createStatement();
